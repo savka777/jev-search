@@ -1,11 +1,32 @@
 {
   "name": "jev-search",
-  "version": "0.0.1",
-  "private": true,
-  "type": "module",
-  "description": "Pi package: deep research where Jev (TypeSafe System One) decides which fetched text to keep.",
+  "version": "0.1.0",
+  "description": "Fast deep research for the pi coding agent: reads up to 100 pages in full per round, Jev keeps only the passages that answer your questions.",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "pi",
+    "research",
+    "web-search",
+    "deep-research",
+    "typesafe",
+    "jev"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/savka777/jev-search.git"
+  },
+  "homepage": "https://github.com/savka777/jev-search#readme",
+  "type": "module",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "files": [
+    "src",
+    "skills",
+    "README.md",
+    "LICENSE",
+    ".env.example"
   ],
   "pi": {
     "extensions": [

@@ -1,3 +1,5 @@
+> Historical note: this is the plan from the first day. The project moved from "read long pages" to "fast research rounds". The README describes the current design.
+
 # jev-search plan
 
 ## Goal
