@@ -34,7 +34,8 @@
     ],
     "skills": [
       "./skills"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/savka777/jev-search/main/assets/social-preview.png"
   },
   "scripts": {
     "pages": "node bench/pages.ts",

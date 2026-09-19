@@ -1,4 +1,6 @@
-# jev-search
+<p align="center">
+  <img alt="jev-search" src="https://raw.githubusercontent.com/savka777/jev-search/main/assets/banner.svg" width="600">
+</p>
 
 Fast deep research for the [pi](https://github.com/earendil-works/pi) coding agent.
 
