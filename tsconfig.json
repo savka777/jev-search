@@ -7,7 +7,20 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@earendil-works/pi-tui": [
+        "./node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/index.d.ts"
+      ],
+      "typebox": [
+        "./node_modules/@earendil-works/pi-coding-agent/node_modules/typebox/build/index.d.mts"
+      ]
+    }
   },
-  "include": ["src", "bench"]
+  "include": [
+    "src",
+    "bench"
+  ]
 }

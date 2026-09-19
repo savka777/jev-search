@@ -7,6 +7,14 @@
   "keywords": [
     "pi-package"
   ],
+  "pi": {
+    "extensions": [
+      "./src/extension/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
   "scripts": {
     "pages": "node bench/pages.ts",
     "bench": "node bench/run.ts",
@@ -17,7 +25,13 @@
     "@typesafe-ai/sdk": "^0.6.0",
     "turndown": "^7.2.4"
   },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.10",
     "@types/node": "^26.6.2",
     "@types/turndown": "^5.0.6",
     "typescript": "^7.0.2"

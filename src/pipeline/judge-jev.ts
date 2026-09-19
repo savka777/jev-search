@@ -35,6 +35,9 @@ export type JudgeOptions = {
 	onBatch?: (judgments: Judgment[]) => void;
 };
 
+// Request starts are paced across all running judgeChunks calls: pi runs tool calls in parallel, and the rate limit is per account.
+let nextStart = 0;
+
 /** Evidence question for one research sub-question. Wording is literal because Jev reads literally. */
 export function evidenceQuestion(id: string, subQuestion: string): ChunkQuestion {
 	return {
@@ -71,7 +74,6 @@ export async function judgeChunks(
 
 	const judgments: Judgment[] = [];
 	let nextBatch = 0;
-	let nextStart = 0;
 	const started = performance.now();
 
 	const worker = async () => {
