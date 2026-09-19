@@ -1,0 +1,8 @@
+{
+  "name": "jev-search",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Pi package: deep research where Jev (TypeSafe System One) decides which fetched text to keep.",
+  "keywords": ["pi-package"]
+}
