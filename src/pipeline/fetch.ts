@@ -116,6 +116,11 @@ export async function fetchPage(url: string, options: FetchOptions = {}): Promis
 		if (status !== 200) {
 			throw new Error(`HTTP ${status} for ${url}`);
 		}
+		// PDFs and other binary files read as HTML give garbage chunks that still cost judge tokens.
+		const contentType = response.headers.get("content-type") ?? "";
+		if (contentType && !/html|xml|text\/plain/i.test(contentType)) {
+			throw new Error(`Unsupported content type "${contentType}" for ${url}. Only HTML and plain text pages can be read.`);
+		}
 		html = await response.text();
 		if (cacheFile && options.cacheDir) {
 			await mkdir(options.cacheDir, { recursive: true });
