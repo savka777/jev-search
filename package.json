@@ -4,5 +4,20 @@
   "private": true,
   "type": "module",
   "description": "Pi package: deep research where Jev (TypeSafe System One) decides which fetched text to keep.",
-  "keywords": ["pi-package"]
+  "keywords": [
+    "pi-package"
+  ],
+  "scripts": {
+    "pages": "node bench/pages.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@joplin/turndown-plugin-gfm": "^1.0.68",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^7.0.2"
+  }
 }

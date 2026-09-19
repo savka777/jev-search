@@ -1,0 +1,9 @@
+[
+  { "id": "uk-dpa-2018", "url": "https://www.legislation.gov.uk/ukpga/2018/12/enacted/data.htm" },
+  { "id": "wealth-of-nations", "url": "https://www.gutenberg.org/files/3300/3300-h/3300-h.htm" },
+  { "id": "rfc-9110", "url": "https://www.rfc-editor.org/rfc/rfc9110.html" },
+  { "id": "bash-manual", "url": "https://www.gnu.org/software/bash/manual/bash.html" },
+  { "id": "rust-book", "url": "https://doc.rust-lang.org/book/print.html" },
+  { "id": "python-3.12", "url": "https://docs.python.org/3/whatsnew/3.12.html" },
+  { "id": "wiki-ww2", "url": "https://en.wikipedia.org/wiki/World_War_II" }
+]
