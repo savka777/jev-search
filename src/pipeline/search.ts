@@ -11,8 +11,24 @@ const decode = (html: string) =>
 		.replace(/\s+/g, " ")
 		.trim();
 
+// The search site rejects bursts: 10 parallel searches in one second all failed, bursts of 8 mostly passed.
+// Starts are spaced across all parallel calls, and an empty result is tried once more.
+const GAP_MS = 700;
+let nextStart = 0;
+
 /** Web search without an API key, through the DuckDuckGo HTML page. */
 export async function webSearch(query: string, maxResults = 10, signal?: AbortSignal): Promise<SearchResult[]> {
+	for (let attempt = 0; ; attempt++) {
+		const wait = nextStart - Date.now();
+		nextStart = Math.max(Date.now(), nextStart) + GAP_MS;
+		if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+		const results = await searchOnce(query, maxResults, signal);
+		if (results.length > 0) return results;
+		if (attempt === 1) throw new Error("Search returned no results. The search site may be limiting requests; try again or change the query.");
+	}
+}
+
+async function searchOnce(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
 	const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
 		headers: { "user-agent": "Mozilla/5.0 (compatible; jev-search/0.0.1; +https://github.com/savka777/jev-search)" },
 		signal,
@@ -32,6 +48,5 @@ export async function webSearch(query: string, maxResults = 10, signal?: AbortSi
 		results.push({ title: decode(link[2]), url: target, snippet: snippet ? decode(snippet[1]) : "" });
 		if (results.length >= maxResults) break;
 	}
-	if (results.length === 0) throw new Error("Search returned no results. The search site may be limiting requests; try again or change the query.");
 	return results;
 }
