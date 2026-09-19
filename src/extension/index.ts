@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -8,7 +8,7 @@ import { Type } from "typebox";
 import { chunkMarkdown, estimateTokens } from "../pipeline/chunk.ts";
 import { fetchPage } from "../pipeline/fetch.ts";
 import { evidenceQuestion, judgeChunks, selectChunks } from "../pipeline/judge-jev.ts";
-import { type ResearchState, runResearch } from "../pipeline/research.ts";
+import { type ResearchState, runResearch, scoreFor } from "../pipeline/research.ts";
 import { webSearch } from "../pipeline/search.ts";
 import { type FetchView, renderFetchView, renderResearchView } from "./view.ts";
 
@@ -169,33 +169,41 @@ export default function (pi: ExtensionAPI) {
 		name: "jev_research",
 		label: "Jev Research",
 		description:
-			"One fast research round. Runs all search queries, reads every result page in full and in parallel, and lets Jev judge every part of every page against every sub-question. Returns the coverage of each sub-question (how many independent sources answer it) and the passages that answer it, word for word. A round takes seconds, so use many queries and many pages.",
-		promptSnippet: "Research round: many searches and pages at once, returns coverage and exact passages per sub-question",
+			"One fast research round. Runs all search queries, reads every result page in full and in parallel (100 pages by default), and lets Jev judge every part of every page against the main question, every sub-question, and every claim. Returns coverage (how many independent sources), the best passages word for word, and a file with every kept passage. A round takes seconds, so use many queries and many pages.",
+		promptSnippet: "Research round: many searches and pages at once; returns coverage, exact passages, and support/contradict counts for claims",
 		promptGuidelines: [
-			"Use jev_research for web research: give jev_research 2 to 8 literal sub-questions with acceptance criteria and 3 to 10 search queries. Read its coverage table, then call jev_research again with new queries for the sub-questions that are still open or partial.",
+			"Use jev_research for web research: give jev_research the user's main question as objective, 2 to 8 literal sub_questions with acceptance criteria, claims to test when the user has a thesis, and 3 to 10 search queries. Read its coverage table, then call jev_research again with new queries for what is still open.",
 		],
 		parameters: Type.Object({
-			sub_questions: Type.Array(
-				Type.Object({
-					question: Type.String({ description: "One literal question that a single passage can answer. Name the entities." }),
-					criteria: Type.Optional(Type.String({ description: "What counts as an answer, and what does not." })),
-					min_sources: Type.Optional(Type.Number({ description: "Independent sources needed to call it covered. Default 2." })),
-				}),
-				{ minItems: 1, maxItems: 8 },
+			objective: Type.Optional(Type.String({ description: "The user's main question. Judged as a catch-all and used as a search query." })),
+			sub_questions: Type.Optional(
+				Type.Array(
+					Type.Object({
+						question: Type.String({ description: "One literal question that a single passage can answer. Name the entities." }),
+						criteria: Type.Optional(Type.String({ description: "What counts as an answer, and what does not." })),
+						min_sources: Type.Optional(Type.Number({ description: "Independent sources needed to call it covered. Default 2." })),
+					}),
+					{ maxItems: 8 },
+				),
 			),
-			queries: Type.Array(Type.String(), { description: "Web search queries", minItems: 1, maxItems: 12 }),
+			claims: Type.Optional(
+				Type.Array(Type.String(), { description: "Statements or theses to test. Jev finds passages that support each one and passages that contradict it, by meaning, not by wording.", maxItems: 4 }),
+			),
+			queries: Type.Array(Type.String(), { description: "Web search queries. For claims, include queries that look for the opposite view.", minItems: 1, maxItems: 12 }),
 			urls: Type.Optional(Type.Array(Type.String(), { description: "Pages to read in addition to the search results" })),
-			max_pages: Type.Optional(Type.Number({ description: "Default 40" })),
-			budget_tokens: Type.Optional(Type.Number({ description: "Most tokens of passages to return. Default 8000." })),
+			max_pages: Type.Optional(Type.Number({ description: "Default 100" })),
+			budget_tokens: Type.Optional(Type.Number({ description: "Most tokens of passages to return in the reply. Default 8000. All other kept passages go to the evidence file." })),
 		}),
 
 		async execute(_id, params, signal, onUpdate, ctx) {
 			if (!process.env.TYPESAFE_API_KEY) throw new Error(NO_KEY);
 
 			let lastUpdate = 0;
-			const { state, snippets } = await runResearch(
+			const { state, snippets, evidence } = await runResearch(
 				{
-					subQuestions: params.sub_questions.map((sub) => ({ question: sub.question, criteria: sub.criteria, minSources: sub.min_sources })),
+					objective: params.objective,
+					subQuestions: params.sub_questions?.map((sub) => ({ question: sub.question, criteria: sub.criteria, minSources: sub.min_sources })),
+					claims: params.claims,
 					queries: params.queries,
 					urls: params.urls,
 					maxPages: params.max_pages,
@@ -219,28 +227,50 @@ export default function (pi: ExtensionAPI) {
 			totals.ms += state.ms;
 			showTotals(ctx);
 
+			// Every kept passage goes to a file, so the reply budget hides nothing for good.
+			const name = (cover: (typeof state.coverage)[number]) => (cover.kind === "supports" || cover.kind === "contradicts" ? `${cover.id} ${cover.kind.toUpperCase()}: ${cover.label}` : `${cover.id} ${cover.label}`);
+			const passage = (item: (typeof evidence)[number], id: string) => `p=${scoreFor(item.p, id).toFixed(2)} · ${item.title} · ${item.url} · chunk ${item.chunk}${item.section ? ` · ${item.section}` : ""}\n${item.text}`;
+			const dir = join(tmpdir(), "jev-search");
+			mkdirSync(dir, { recursive: true });
+			const evidenceFile = join(dir, `evidence-${new Date().toISOString().replace(/[:.]/g, "-")}.md`);
+			writeFileSync(
+				evidenceFile,
+				state.coverage
+					.map((cover) => {
+						const items = evidence.filter((item) => scoreFor(item.p, cover.id) >= 0.5).sort((a, b) => scoreFor(b.p, cover.id) - scoreFor(a.p, cover.id));
+						return `# ${name(cover)}\n${items.length} passages from ${new Set(items.map((item) => item.host)).size} sources\n\n${items.map((item) => `## ${passage(item, cover.id)}`).join("\n\n")}`;
+					})
+					.join("\n\n"),
+			);
+
+			const shown = new Set(snippets.map((snippet) => `${snippet.url}#${snippet.chunk}`));
+			const notShown = (id: string) => [...new Set(evidence.filter((item) => scoreFor(item.p, id) >= 0.8 && !shown.has(`${item.url}#${item.chunk}`)).map((item) => item.url))];
 			const done = state.sources.filter((source) => source.status === "done").length;
-			const failed = state.sources.filter((source) => source.status === "failed");
-			const open = state.coverage.filter((cover) => cover.status !== "covered");
+			const failed = state.sources.length - done;
+			const open = state.coverage.filter((cover) => (cover.kind === "question" || cover.kind === "main") && cover.status !== "covered");
 			const text = [
-				`Round: ${state.queriesTotal} queries → ${state.sources.length} links → ${done} pages read in full (${failed.length} blocked or failed) · ${state.chunksJudged} chunks judged · ${state.pageTokens} tokens read → ${state.keptTokens} kept · ${(state.ms / 1000).toFixed(1)} s`,
+				`Round: ${state.queriesTotal} queries → ${state.sources.length} links → ${done} pages read in full (${failed} blocked or failed) · ${state.chunksJudged} chunks judged · ${state.pageTokens} tokens read · ${(state.ms / 1000).toFixed(1)} s`,
 				"",
-				"COVERAGE (a source counts when Jev gives p ≥ 0.8 that a passage answers the sub-question; p is not proof that the statement is true)",
-				...state.coverage.map((cover) => `${cover.id} [${cover.status}, ${cover.hosts.length}/${cover.needed} sources, best p=${cover.bestP.toFixed(2)}] ${cover.question}`),
+				"COVERAGE (a source counts when Jev gives p ≥ 0.8 for one of its passages; p is not proof that a statement is true)",
+				...state.coverage.map((cover) => {
+					const more = notShown(cover.id);
+					return `${name(cover)}\n   ${cover.hosts.length} sources${cover.kind === "question" || cover.kind === "main" ? ` of ${cover.needed} needed, ${cover.status}` : ""}, best p=${cover.bestP.toFixed(2)}${more.length ? `\n   strong sources not shown below: ${more.slice(0, 12).join(" ")}${more.length > 12 ? ` (+${more.length - 12} more)` : ""}` : ""}`;
+				}),
 				"",
-				"EVIDENCE (exact text from the pages)",
-				...snippets.map((snippet, i) => `[${i + 1}] ${snippet.ids.join(",")} · p=${snippet.p.toFixed(2)} · ${snippet.title} · ${snippet.url} · chunk ${snippet.chunk}${snippet.section ? ` · ${snippet.section}` : ""}\n${snippet.text}`),
+				`EVIDENCE: the best ${snippets.length} of ${evidence.length} kept passages (${state.keptTokens} tokens), exact text. All ${evidence.length} are in ${evidenceFile} (use the read tool when you need more for a point).`,
+				...snippets.map((snippet, i) => `[${i + 1}] ${snippet.ids.join(",")} · ${passage(snippet, snippet.ids[0])}`),
 				"",
 				open.length
-					? `NEXT: ${open.map((cover) => cover.id).join(", ")} not covered yet. Call jev_research again with new queries for those sub-questions only, or report them as not found.`
-					: "NEXT: every sub-question is covered. Check the passages for conflicts, then write the report.",
+					? `NEXT: ${open.map((cover) => cover.id).join(", ")} not covered yet. Call jev_research again with new queries for those only, or report them as not found.`
+					: "NEXT: coverage is complete. Check the passages for conflicts and repeats of the same study, then write the report.",
 				...(state.searchErrors.length ? ["", `SEARCH ERRORS: ${state.searchErrors.join(" | ")}`] : []),
 			].join("\n");
 			return { content: [{ type: "text", text }], details: state };
 		},
 
 		renderCall(args, theme) {
-			return new Text(`${theme.fg("toolTitle", theme.bold("jev_research "))}${theme.fg("muted", `${args.sub_questions?.length ?? 0} sub-questions · ${args.queries?.length ?? 0} queries`)}`, 0, 0);
+			const parts = [`${args.sub_questions?.length ?? 0} sub-questions`, ...(args.claims?.length ? [`${args.claims.length} claims`] : []), `${args.queries?.length ?? 0} queries`];
+			return new Text(`${theme.fg("toolTitle", theme.bold("jev_research "))}${theme.fg("muted", parts.join(" · "))}`, 0, 0);
 		},
 		renderResult(result, { expanded }, theme) {
 			const state = result.details as ResearchState | undefined;

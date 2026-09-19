@@ -1,13 +1,18 @@
 // One research round, with no LLM inside: search all queries, read every result in parallel,
-// let Jev judge every chunk against every sub-question, then score coverage by counting sources.
+// let Jev judge every chunk against every probe, then score coverage by counting sources.
+import { noul } from "@typesafe-ai/sdk";
 import { chunkMarkdown, estimateTokens } from "./chunk.ts";
 import { fetchPage } from "./fetch.ts";
-import { evidenceQuestion, judgeChunks } from "./judge-jev.ts";
+import { type ChunkQuestion, evidenceQuestion, judgeChunks } from "./judge-jev.ts";
 import { webSearch } from "./search.ts";
 
 export type SubQuestion = { question: string; criteria?: string; minSources?: number };
 export type ResearchPlan = {
-	subQuestions: SubQuestion[];
+	/** The user's main question. Judged as a catch-all, and used as a search query. */
+	objective?: string;
+	subQuestions?: SubQuestion[];
+	/** Statements to test. Each one is judged twice: passages that support it, passages that contradict it. */
+	claims?: string[];
 	queries: string[];
 	/** Pages to read in addition to the search results. */
 	urls?: string[];
@@ -27,8 +32,18 @@ export type SourceState = {
 	pageTokens: number;
 	kept: number;
 };
-export type Coverage = { id: string; question: string; needed: number; hosts: string[]; bestP: number; status: "covered" | "partial" | "open" };
-export type Snippet = { ids: string[]; url: string; title: string; chunk: number; section: string; p: number; text: string };
+/** One thing Jev checks in every chunk: a sub-question, the main question, or one side of a claim. */
+export type Coverage = {
+	id: string;
+	kind: "main" | "question" | "supports" | "contradicts";
+	label: string;
+	needed: number;
+	hosts: string[];
+	bestP: number;
+	status: "covered" | "partial" | "open";
+};
+export type Evidence = { url: string; host: string; title: string; chunk: number; section: string; text: string; p: Record<string, number> };
+export type Snippet = Evidence & { ids: string[] };
 export type ResearchState = {
 	queriesDone: number;
 	queriesTotal: number;
@@ -46,27 +61,60 @@ export type ResearchState = {
 
 const USD_PER_MTOK = 0.042; // docs.typesafe.ai/models, jev-1.13.0, input tokens only
 const KEEP = 0.5;
-/** A source counts toward coverage only when Jev is this sure that a passage answers the sub-question. */
+/** A source counts toward coverage only when Jev is this sure about one of its passages. */
 const STRONG = 0.8;
-const FETCH_CONCURRENCY = 12;
+const FETCH_CONCURRENCY = 24;
 
 const hostOf = (url: string) => new URL(url).hostname.replace(/^www\./, "");
+
+/** Stance wording from bench/stance.ts: it matched meaning ("sales per employee +39.9%") with no literal overlap. */
+function stanceQuestion(id: string, claim: string, verb: "supports" | "contradicts"): ChunkQuestion {
+	const other = verb === "supports" ? "contradicts" : "supports";
+	return {
+		id,
+		build: (ref) =>
+			noul(`Does the text in ${ref} give evidence, data, or a reasoned argument that ${verb} this claim: "${claim}"`, {
+				true: `The text reports a finding, a number, an example, or an argument that ${verb} the claim. The wording can differ from the claim.`,
+				false: `The text is only on the topic without taking a side, or it ${other} the claim, or it is navigation, a list of links, or an advertisement.`,
+			}),
+	};
+}
+
+/** For a claim, a passage counts for one side only when that side scores higher than the other. */
+const opposite = (id: string) => (id.endsWith("+") ? `${id.slice(0, -1)}-` : id.endsWith("-") ? `${id.slice(0, -1)}+` : undefined);
+export const scoreFor = (p: Record<string, number>, id: string) => {
+	const other = opposite(id);
+	return other && p[other] >= p[id] ? 0 : p[id];
+};
 
 export async function runResearch(
 	plan: ResearchPlan,
 	options: { signal?: AbortSignal; onProgress?: (state: ResearchState) => void } = {},
-): Promise<{ state: ResearchState; snippets: Snippet[] }> {
+): Promise<{ state: ResearchState; snippets: Snippet[]; evidence: Evidence[] }> {
 	const started = performance.now();
-	const maxPages = plan.maxPages ?? 40;
-	const ids = plan.subQuestions.map((_, i) => `q${i + 1}`);
-	const questions = plan.subQuestions.map((sub, i) => evidenceQuestion(ids[i], sub.question, sub.criteria));
+	const maxPages = plan.maxPages ?? 100;
 
+	const questions: ChunkQuestion[] = [];
+	const coverage: Coverage[] = [];
+	const probe = (question: ChunkQuestion, kind: Coverage["kind"], label: string, needed: number) => {
+		questions.push(question);
+		coverage.push({ id: question.id, kind, label, needed, hosts: [], bestP: 0, status: "open" });
+	};
+	if (plan.objective) probe(evidenceQuestion("main", plan.objective), "main", plan.objective, 2);
+	(plan.subQuestions ?? []).forEach((sub, i) => probe(evidenceQuestion(`q${i + 1}`, sub.question, sub.criteria), "question", sub.question, sub.minSources ?? 2));
+	(plan.claims ?? []).forEach((claim, i) => {
+		probe(stanceQuestion(`c${i + 1}+`, claim, "supports"), "supports", claim, 2);
+		probe(stanceQuestion(`c${i + 1}-`, claim, "contradicts"), "contradicts", claim, 2);
+	});
+	if (questions.length === 0) throw new Error("Give an objective, sub-questions, or claims.");
+
+	const queries = [...new Set([...(plan.objective ? [plan.objective] : []), ...plan.queries])];
 	const state: ResearchState = {
 		queriesDone: 0,
-		queriesTotal: plan.queries.length,
+		queriesTotal: queries.length,
 		searchErrors: [],
 		sources: [],
-		coverage: plan.subQuestions.map((sub, i) => ({ id: ids[i], question: sub.question, needed: sub.minSources ?? 2, hosts: [], bestP: 0, status: "open" })),
+		coverage,
 		chunksJudged: 0,
 		pageTokens: 0,
 		keptTokens: 0,
@@ -82,7 +130,7 @@ export async function runResearch(
 
 	// 1. Search. Results are taken in turns from each query so no single query fills the page budget.
 	const perQuery = await Promise.all(
-		plan.queries.map((query) =>
+		queries.map((query) =>
 			webSearch(query, 20, options.signal)
 				.catch((error: Error) => {
 					state.searchErrors.push(`${query}: ${error.message}`);
@@ -102,7 +150,7 @@ export async function runResearch(
 	progress();
 
 	// 2. Read and judge. Each page goes to Jev as soon as it arrives.
-	const candidates: { source: SourceState; chunk: number; section: string; text: string; p: Record<string, number> }[] = [];
+	const evidence: Evidence[] = [];
 	let next = 0;
 	const worker = async () => {
 		while (next < state.sources.length && !options.signal?.aborted) {
@@ -125,15 +173,15 @@ export async function runResearch(
 					signal: options.signal,
 					onBatch: (batch) => {
 						for (const j of batch) {
-							const best = Math.max(...Object.values(j.p));
+							const best = Math.max(...coverage.map((cover) => scoreFor(j.p, cover.id)));
 							source.scores[j.chunk.index] = best;
 							state.chunksJudged++;
 							if (best >= KEEP) {
 								source.kept++;
-								candidates.push({ source, chunk: j.chunk.index, section: j.chunk.headingPath.join(" > "), text: j.chunk.text, p: j.p });
+								evidence.push({ url: source.url, host: source.host, title: source.title, chunk: j.chunk.index, section: j.chunk.headingPath.join(" > "), text: j.chunk.text, p: j.p });
 							}
-							for (const cover of state.coverage) {
-								const p = j.p[cover.id];
+							for (const cover of coverage) {
+								const p = scoreFor(j.p, cover.id);
 								cover.bestP = Math.max(cover.bestP, p);
 								if (p >= STRONG && !cover.hosts.includes(source.host)) cover.hosts.push(source.host);
 								cover.status = cover.hosts.length >= cover.needed ? "covered" : cover.hosts.length > 0 ? "partial" : "open";
@@ -155,33 +203,26 @@ export async function runResearch(
 	};
 	await Promise.all(Array.from({ length: FETCH_CONCURRENCY }, worker));
 
-	// 3. Select snippets: per sub-question, best first, at most 2 per page, within an equal share of the budget.
-	const share = (plan.budgetTokens ?? 8000) / ids.length;
-	const chosen = new Map<(typeof candidates)[number], string[]>();
-	for (const id of ids) {
+	// 3. Select what the agent reads now: per probe, best first, at most 2 per page, within an equal share of the budget.
+	// Nothing is deleted: `evidence` holds every kept passage.
+	const share = (plan.budgetTokens ?? 8000) / coverage.length;
+	const chosen = new Map<Evidence, string[]>();
+	for (const { id } of coverage) {
 		let tokens = 0;
 		const perPage = new Map<string, number>();
-		for (const candidate of candidates.filter((c) => c.p[id] >= KEEP).sort((a, b) => b.p[id] - a.p[id])) {
-			const used = perPage.get(candidate.source.url) ?? 0;
+		for (const item of evidence.filter((e) => scoreFor(e.p, id) >= KEEP).sort((a, b) => scoreFor(b.p, id) - scoreFor(a.p, id))) {
+			const used = perPage.get(item.url) ?? 0;
 			if (used >= 2) continue;
-			if (!chosen.has(candidate)) {
-				tokens += estimateTokens(candidate.text);
-				if (tokens > share && tokens > estimateTokens(candidate.text)) break;
+			if (!chosen.has(item)) {
+				tokens += estimateTokens(item.text);
+				if (tokens > share && tokens > estimateTokens(item.text)) break;
 			}
-			perPage.set(candidate.source.url, used + 1);
-			chosen.set(candidate, [...(chosen.get(candidate) ?? []), id]);
+			perPage.set(item.url, used + 1);
+			chosen.set(item, [...(chosen.get(item) ?? []), id]);
 		}
 	}
-	const snippets = [...chosen].map(([c, answered]) => ({
-		ids: answered,
-		url: c.source.url,
-		title: c.source.title,
-		chunk: c.chunk,
-		section: c.section,
-		p: Math.max(...answered.map((id) => c.p[id])),
-		text: c.text,
-	}));
+	const snippets = [...chosen].map(([item, ids]) => ({ ...item, ids }));
 	state.keptTokens = snippets.reduce((sum, snippet) => sum + estimateTokens(snippet.text), 0);
 	progress();
-	return { state, snippets };
+	return { state, snippets, evidence };
 }

@@ -23,6 +23,8 @@ Skip this step when the request already answers these points. Do not grill for a
 
 ## 2. Plan
 
+Set `objective` to the user's main question, in their words. It is judged as a catch-all, so evidence that your sub-questions miss is still found.
+
 Write 2 to 8 sub-questions. Each one must be answerable by a single passage. Jev reads literally, so name the entities and the fact you want.
 
 - Good: "What is the maximum fine for providers of general-purpose AI models under the EU AI Act?"
@@ -30,12 +32,15 @@ Write 2 to 8 sub-questions. Each one must be answerable by a single passage. Jev
 
 For each sub-question write `criteria`: what counts and what does not. Example: "An amount in euros or a percentage of turnover, for GPAI providers specifically. General fines for other operators do not count."
 
+When the user has a thesis, an idea, or a belief to test, put it in `claims` as a plain statement ("A four-day work week improves employee productivity"). Jev finds passages that support it and passages that contradict it, by meaning, not by wording. Always add queries that look for the opposite view ("problems", "criticism", "failed", "no effect"); without them the count only reflects what the search found.
+
 Show the plan to the user in a short list before the first round. Continue without waiting unless they grilled you back.
 
 ## 3. Run rounds
 
-1. Call `jev_research` with all sub-questions and 3 to 10 search queries. Vary the queries: official names, article numbers, synonyms, primary-source sites. Add known primary sources as `urls`.
-2. Read the coverage table. `covered` means enough independent sources gave a passage with p ≥ 0.8.
+1. Call `jev_research` with the objective, all sub-questions, any claims, and 3 to 10 search queries. A round reads up to 100 pages. Vary the queries: official names, article numbers, synonyms, primary-source sites. Add known primary sources as `urls`.
+2. Read the coverage table. `covered` means enough independent sources gave a passage with p ≥ 0.8. For claims you get the number of sources on each side.
+   The reply holds only the best passages. Every kept passage is in the evidence file named in the reply: read it with the `read` tool when a point needs more support, more detail, or the weaker side of a claim.
 3. For sub-questions that are `open` or `partial`, write new queries and call `jev_research` again with only those sub-questions. If a sub-question found nothing twice, reword it: the wording may not match how sources state the fact.
 4. Stop when every sub-question is covered, or when 2 rounds in a row add nothing. Say which sub-questions stay open.
 
@@ -47,6 +52,7 @@ Use `jev_fetch` only to read one specific URL. Use `web_search` only when you ne
 - Every claim needs a source link and a short exact quote from the returned passage, in this form: claim, then `> "exact quote"` and `[Source title](URL)`.
 - End with a **Sources** list: every URL you used, as links, with one line on what it supports.
 - Prefer primary sources (laws, standards, official documentation, filings, papers) over pages that summarize them. When only summaries were found, say so.
+- For a claim, report both sides: how many sources support it, how many contradict it, and the strongest passage of each side. Many sources can repeat one study: group them and count the study once. Say when the sources of one side are mostly advocates or sellers.
 - p is the probability that a passage answers the sub-question. It is not proof that the statement is true. When passages disagree, show both, with their sources, and say which is more reliable and why.
 - Separate what the sources state from your own conclusions.
 

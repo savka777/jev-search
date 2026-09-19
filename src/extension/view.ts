@@ -70,9 +70,15 @@ export function renderResearchView(state: ResearchState, expanded: boolean, them
 	];
 
 	for (const cover of state.coverage) {
+		const label = cover.label.length > 64 ? `${cover.label.slice(0, 63)}…` : cover.label;
+		if (cover.kind === "supports" || cover.kind === "contradicts") {
+			// Claims show a count per side, not covered or open.
+			const count = fg(cover.kind === "supports" ? "success" : "error", `${cover.kind === "supports" ? "▲ supports   " : "▼ contradicts"} ${String(cover.hosts.length).padStart(2)} sources`);
+			lines.push(`${count}  ${fg("muted", `${cover.id} ${label}`)}`);
+			continue;
+		}
 		const mark = cover.status === "covered" ? fg("success", "██ covered") : cover.status === "partial" ? fg("warning", "▓▓ partial") : fg("dim", "░░ open   ");
-		const question = cover.question.length > 70 ? `${cover.question.slice(0, 69)}…` : cover.question;
-		lines.push(`${mark} ${fg("dim", `${cover.hosts.length}/${cover.needed} sources`)}  ${fg("muted", `${cover.id} ${question}`)}`);
+		lines.push(`${mark} ${fg("dim", `${cover.hosts.length}/${cover.needed} sources`)}  ${fg("muted", `${cover.id} ${label}`)}`);
 	}
 	lines.push("");
 
