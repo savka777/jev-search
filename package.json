@@ -1,6 +1,6 @@
 {
   "name": "jev-search",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fast deep research for the pi coding agent: reads up to 100 pages in full per round, Jev keeps only the passages that answer your questions.",
   "keywords": [
     "pi-package",
