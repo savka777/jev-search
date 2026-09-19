@@ -37,6 +37,19 @@ turndown.use(gfmPlugin.gfm);
 // Only non-text elements are removed. Navigation, footers and other boilerplate stay: the judge decides.
 turndown.remove(["script", "style", "noscript", "iframe", "template"]);
 turndown.remove((node) => node.nodeName.toLowerCase() === "svg");
+// The GFM plugin keeps tables with lists, headings or code blocks as raw HTML. Raw HTML is noise for the judge,
+// so these tables become one text line per row.
+turndown.addRule("complexTable", {
+	filter: (node) => node.nodeName === "TABLE" && node.querySelector("ul,ol,h1,h2,h3,h4,h5,h6,hr,blockquote,pre") !== null,
+	replacement: (_content, node) => {
+		const rows = Array.from((node as HTMLTableElement).rows, (row) =>
+			Array.from(row.cells, (cell) => (cell.textContent ?? "").replace(/\s+/g, " ").trim())
+				.filter(Boolean)
+				.join(" | "),
+		).filter(Boolean);
+		return `\n\n${rows.join("\n")}\n\n`;
+	},
+});
 
 const IMAGE = /!\[((?:\\.|[^\[\]\\])*)\]\((?:\\.|[^()\\]|\((?:\\.|[^()\\])*\))*\)/g;
 const LINK =

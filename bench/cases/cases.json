@@ -1,0 +1,202 @@
+[
+  {
+    "id": "py-batched",
+    "page": "python-3.12",
+    "question": "Which function did Python 3.12 add to itertools, and what does it do?",
+    "answer": "itertools.batched(), collects items into even-sized tuples",
+    "answerPattern": "batched",
+    "passage": "Add `itertools.batched()` for collecting into even-sized tuples"
+  },
+  {
+    "id": "py-zipimport",
+    "page": "python-3.12",
+    "question": "What should be used in place of the deprecated load_module() method of zipimport?",
+    "answer": "exec_module()",
+    "answerPattern": "exec_module",
+    "passage": "Use `exec_module()` instead. (Contributed by Jiahao Li in gh-125746.)"
+  },
+  {
+    "id": "py-hash-seed",
+    "page": "python-3.12",
+    "question": "Which PyConfig members replace the deprecated Py_HashRandomizationFlag variable?",
+    "answer": "PyConfig.use_hash_seed and PyConfig.hash_seed",
+    "answerPattern": "use_hash_seed",
+    "passage": "`Py_HashRandomizationFlag`: use `PyConfig.use_hash_seed` and `PyConfig.hash_seed`"
+  },
+  {
+    "id": "py-intern-immortal",
+    "page": "python-3.12",
+    "question": "Which function macro for interned strings was removed from the C API in Python 3.12?",
+    "answer": "PyUnicode_InternImmortal()",
+    "answerPattern": "InternImmortal",
+    "passage": "Remove the `PyUnicode_InternImmortal()` function macro."
+  },
+  {
+    "id": "ww2-denmark",
+    "page": "wiki-ww2",
+    "question": "How long did Denmark resist before it capitulated to Germany in April 1940?",
+    "answer": "six hours",
+    "answerPattern": "six hours|6 hours",
+    "passage": "Denmark capitulated after six hours"
+  },
+  {
+    "id": "ww2-bretton-woods",
+    "page": "wiki-ww2",
+    "question": "Until what year did the Bretton Woods system last?",
+    "answer": "1973",
+    "answerPattern": "1973",
+    "passage": "The Bretton Woods system lasted until 1973."
+  },
+  {
+    "id": "ww2-tokyo-b29",
+    "page": "wiki-ww2",
+    "question": "How many American B-29 bombers took part in the March 1945 incendiary air raid on Tokyo?",
+    "answer": "330",
+    "answerPattern": "\\b330\\b",
+    "passage": "330 American B-29s rain incendiary bombs on Tokyo"
+  },
+  {
+    "id": "rfc-uri-length",
+    "page": "rfc-9110",
+    "question": "What minimum URI length does RFC 9110 recommend that all senders and recipients support?",
+    "answer": "8000 octets",
+    "answerPattern": "8,?000",
+    "passage": "support, at a minimum, URIs with lengths of 8000 octets"
+  },
+  {
+    "id": "rfc-305",
+    "page": "rfc-9110",
+    "question": "What is the status of the 305 (Use Proxy) status code in RFC 9110?",
+    "answer": "deprecated",
+    "answerPattern": "deprecated",
+    "passage": "The 305 (Use Proxy) status code was defined in a previous version of this specification and is now deprecated"
+  },
+  {
+    "id": "rfc-418",
+    "page": "rfc-9110",
+    "question": "Why is the 418 status code reserved in RFC 9110?",
+    "answer": "RFC 2324 was an April 1 joke RFC; the code was deployed as a joke so often that it is unusable",
+    "answerPattern": "joke|April|lampoon|2324",
+    "passage": "was an April 1 RFC that lampooned the various ways HTTP was abused"
+  },
+  {
+    "id": "rfc-60-second",
+    "page": "rfc-9110",
+    "question": "Which arbitrary time limit did previous revisions of HTTP impose on deciding whether Last-Modified is a strong validator?",
+    "answer": "60 seconds",
+    "answerPattern": "\\b60\\b|sixty",
+    "passage": "Previous revisions of HTTP imposed an arbitrary 60-second limit"
+  },
+  {
+    "id": "bash-huponexit",
+    "page": "bash-manual",
+    "question": "What does Bash do when the huponexit shell option is set and an interactive login shell exits?",
+    "answer": "It sends SIGHUP to all jobs",
+    "answerPattern": "SIGHUP",
+    "passage": "Bash sends a `SIGHUP` to all jobs when an interactive login shell exits"
+  },
+  {
+    "id": "bash-tmout",
+    "page": "bash-manual",
+    "question": "In an interactive Bash shell, how is the value of the TMOUT variable interpreted?",
+    "answer": "Seconds to wait for a line of input after the primary prompt; Bash terminates if no complete line arrives",
+    "answerPattern": "seconds",
+    "passage": "the value is interpreted as the number of seconds to wait for a line of input after issuing the primary prompt"
+  },
+  {
+    "id": "bash-enable-restricted",
+    "page": "bash-manual",
+    "question": "When Bash is built with support for a restricted shell, under which name must it be called to enter restricted mode?",
+    "answer": "rbash",
+    "answerPattern": "rbash",
+    "passage": "If this is enabled, Bash enters a restricted mode when called as `rbash`."
+  },
+  {
+    "id": "rust-version",
+    "page": "rust-book",
+    "question": "Which Rust version does this version of the Rust book assume?",
+    "answer": "Rust 1.90.0 or later, 2024 edition",
+    "answerPattern": "1\\.90",
+    "passage": "This version of the text assumes you’re using Rust 1.90.0 (released 2025-09-18) or later"
+  },
+  {
+    "id": "rust-orphan-rule",
+    "page": "rust-book",
+    "question": "Why is the orphan rule in Rust named that way?",
+    "answer": "Because the parent type is not present",
+    "answerPattern": "parent type",
+    "passage": "more specifically the _orphan rule_, so named because the parent type is not present"
+  },
+  {
+    "id": "rust-unsafe-superpowers",
+    "page": "rust-book",
+    "question": "How many unsafe superpowers does unsafe Rust give you?",
+    "answer": "five",
+    "answerPattern": "five|\\b5\\b",
+    "passage": "You can take five actions in unsafe Rust that you can’t in safe Rust, which we call _unsafe superpowers_"
+  },
+  {
+    "id": "rust-graceful-shutdown",
+    "page": "rust-book",
+    "question": "In the final web server example that demonstrates graceful shutdown, after how many requests does the server stop accepting connections?",
+    "answer": "two",
+    "answerPattern": "two|\\b2\\b",
+    "passage": "for stream in listener.incoming().take(2) {"
+  },
+  {
+    "id": "dpa-child-age",
+    "page": "uk-dpa-2018",
+    "question": "Under the UK Data Protection Act 2018, to which age are the GDPR references to 16 years changed for a child's consent to information society services?",
+    "answer": "13 years",
+    "answerPattern": "\\b13\\b|thirteen",
+    "passage": "references to “16 years” are to be read as references to “13 years”"
+  },
+  {
+    "id": "dpa-max-penalty",
+    "page": "uk-dpa-2018",
+    "question": "What is the higher maximum amount of a penalty notice for an undertaking under the UK Data Protection Act 2018?",
+    "answer": "20 million Euros or 4% of total annual worldwide turnover, whichever is higher",
+    "answerPattern": "20 million|4 ?%",
+    "passage": "in the case of an undertaking, 20 million Euros or 4% of the undertaking’s total annual worldwide turnover in the preceding financial year, whichever is higher"
+  },
+  {
+    "id": "dpa-commissioner-term",
+    "page": "uk-dpa-2018",
+    "question": "What is the maximum term of office of the Information Commissioner under the UK Data Protection Act 2018?",
+    "answer": "7 years",
+    "answerPattern": "\\b7\\b|seven",
+    "passage": "The Commissioner is to hold office for such term not exceeding 7 years"
+  },
+  {
+    "id": "won-pin-operations",
+    "page": "wealth-of-nations",
+    "question": "In Adam Smith's pin factory example, into about how many distinct operations is the making of a pin divided?",
+    "answer": "about eighteen",
+    "answerPattern": "eighteen|\\b18\\b",
+    "passage": "divided into about eighteen distinct operations"
+  },
+  {
+    "id": "won-invisible-hand",
+    "page": "wealth-of-nations",
+    "question": "According to Adam Smith, what leads an individual who intends only his own gain to promote an end which was no part of his intention?",
+    "answer": "an invisible hand",
+    "answerPattern": "invisible hand",
+    "passage": "led by an invisible hand to promote an end which was no part of his intention"
+  },
+  {
+    "id": "won-spinners",
+    "page": "wealth-of-nations",
+    "question": "According to Adam Smith, how many spinners are necessary to keep one weaver in constant employment?",
+    "answer": "three or four",
+    "answerPattern": "three or four|3 or 4",
+    "passage": "three or four spinners at least are necessary in order to keep one weaver in constant employment"
+  },
+  {
+    "id": "won-window-tax",
+    "page": "wealth-of-nations",
+    "question": "As of January 1775, what duty did the window tax lay on every house in England and on every house in Scotland?",
+    "answer": "three shillings in England, one shilling in Scotland",
+    "answerPattern": "three shillings",
+    "passage": "over and above the duty of three shillings upon every house in England, and of one shilling upon every house in Scotland"
+  }
+]
