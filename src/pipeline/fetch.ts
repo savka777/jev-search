@@ -100,6 +100,7 @@ export async function fetchPage(url: string, options: FetchOptions = {}): Promis
 	let html: string | undefined;
 	let status = 200;
 	let cached = false;
+	let isHtml = true;
 	const fetchStart = performance.now();
 
 	if (cacheFile) {
@@ -119,9 +120,10 @@ export async function fetchPage(url: string, options: FetchOptions = {}): Promis
 		}
 		// PDFs and other binary files read as HTML give garbage chunks that still cost judge tokens.
 		const contentType = response.headers.get("content-type") ?? "";
-		if (contentType && !/html|xml|text\/plain/i.test(contentType)) {
-			throw new Error(`Unsupported content type "${contentType}" for ${url}. Only HTML and plain text pages can be read.`);
+		if (contentType && !/html|xml|^text\//i.test(contentType)) {
+			throw new Error(`Unsupported content type "${contentType}" for ${url}. Only HTML and text pages can be read.`);
 		}
+		isHtml = !contentType || /html|xml/i.test(contentType);
 		html = await response.text();
 		if (cacheFile && options.cacheDir) {
 			await mkdir(options.cacheDir, { recursive: true });
@@ -131,13 +133,13 @@ export async function fetchPage(url: string, options: FetchOptions = {}): Promis
 	const fetchMs = performance.now() - fetchStart;
 
 	const convertStart = performance.now();
-	const { markdown, links } = htmlToMarkdown(html, url);
+	const { markdown, links } = isHtml ? htmlToMarkdown(html, url) : { markdown: html.trim(), links: [] };
 	const convertMs = performance.now() - convertStart;
 
 	return {
 		url,
 		status,
-		title: titleOf(html),
+		title: isHtml ? titleOf(html) : (html.match(/^#\s+(.+)$/m)?.[1] ?? ""),
 		markdown,
 		links,
 		htmlBytes: Buffer.byteLength(html),

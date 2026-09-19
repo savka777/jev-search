@@ -10,7 +10,15 @@ import { fetchPage } from "../pipeline/fetch.ts";
 import { evidenceQuestion, judgeChunks, selectChunks } from "../pipeline/judge-jev.ts";
 import { type ResearchState, runResearch, scoreFor } from "../pipeline/research.ts";
 import { webSearch } from "../pipeline/search.ts";
-import { type FetchView, renderFetchView, renderResearchView } from "./view.ts";
+import { type FetchView, Lines, renderFetchView, renderResearchView } from "./view.ts";
+
+/** Live updates are limited to 4 per second: faster redraws of a tall tool row make the screen flicker. */
+const UPDATE_MS = 250;
+const reuse = (last: unknown, text: string) => {
+	const lines = last instanceof Lines ? last : new Lines();
+	lines.setText(text);
+	return lines;
+};
 
 const USD_PER_MTOK = 0.042; // docs.typesafe.ai/models, jev-1.13.0, input tokens only
 
@@ -113,7 +121,12 @@ export default function (pi: ExtensionAPI) {
 				ms: 0,
 				usd: 0,
 			};
-			const update = () => onUpdate?.({ content: [{ type: "text", text: "Judging chunks..." }], details: { ...view, scores: [...view.scores] } });
+			let lastUpdate = 0;
+			const update = () => {
+				if (performance.now() - lastUpdate < UPDATE_MS) return;
+				lastUpdate = performance.now();
+				onUpdate?.({ content: [{ type: "text", text: "Judging chunks..." }], details: { ...view, scores: [...view.scores] } });
+			};
 			update();
 
 			const questions = params.questions.map((question, i) => evidenceQuestion(`q${i + 1}`, question));
@@ -155,13 +168,13 @@ export default function (pi: ExtensionAPI) {
 			return { content: [{ type: "text", text: `${header}\n${legend}\n\n${body}` }], details: { ...view } };
 		},
 
-		renderCall(args, theme) {
-			return new Text(`${theme.fg("toolTitle", theme.bold("jev_fetch "))}${theme.fg("muted", args.url ?? "")}`, 0, 0);
+		renderCall(args, theme, context) {
+			return reuse(context.lastComponent, `${theme.fg("toolTitle", theme.bold("jev_fetch "))}${theme.fg("muted", args.url ?? "")}`);
 		},
-		renderResult(result, { expanded }, theme) {
+		renderResult(result, { expanded }, theme, context) {
 			const view = result.details as FetchView | undefined;
 			if (!view?.scores) return new Text(result.content.map((c) => (c.type === "text" ? c.text : "")).join("\n"), 0, 0);
-			return new Text(renderFetchView(view, expanded, theme), 0, 0);
+			return reuse(context.lastComponent, renderFetchView(view, expanded, theme));
 		},
 	});
 
@@ -212,7 +225,7 @@ export default function (pi: ExtensionAPI) {
 				{
 					signal,
 					onProgress: (progress) => {
-						if (performance.now() - lastUpdate < 120) return;
+						if (performance.now() - lastUpdate < UPDATE_MS) return;
 						lastUpdate = performance.now();
 						onUpdate?.({ content: [{ type: "text", text: "Researching..." }], details: structuredClone(progress) });
 					},
@@ -268,14 +281,14 @@ export default function (pi: ExtensionAPI) {
 			return { content: [{ type: "text", text }], details: state };
 		},
 
-		renderCall(args, theme) {
+		renderCall(args, theme, context) {
 			const parts = [`${args.sub_questions?.length ?? 0} sub-questions`, ...(args.claims?.length ? [`${args.claims.length} claims`] : []), `${args.queries?.length ?? 0} queries`];
-			return new Text(`${theme.fg("toolTitle", theme.bold("jev_research "))}${theme.fg("muted", parts.join(" · "))}`, 0, 0);
+			return reuse(context.lastComponent, `${theme.fg("toolTitle", theme.bold("jev_research "))}${theme.fg("muted", parts.join(" · "))}`);
 		},
-		renderResult(result, { expanded }, theme) {
+		renderResult(result, { expanded }, theme, context) {
 			const state = result.details as ResearchState | undefined;
 			if (!state?.coverage) return new Text(result.content.map((c) => (c.type === "text" ? c.text : "")).join("\n"), 0, 0);
-			return new Text(renderResearchView(state, expanded, theme), 0, 0);
+			return reuse(context.lastComponent, renderResearchView(state, expanded, theme));
 		},
 	});
 }

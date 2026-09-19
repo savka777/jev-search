@@ -1,4 +1,20 @@
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { ResearchState } from "../pipeline/research.ts";
+
+/**
+ * Tool row content. Lines are cut to the width, never wrapped: wrapped lines change the row height on every
+ * live update, and the screen jumps. The same instance is reused between updates so pi can redraw only what changed.
+ */
+export class Lines {
+	private lines: string[] = [];
+	setText(text: string) {
+		this.lines = text.split("\n");
+	}
+	render(width: number): string[] {
+		return this.lines.map((line) => truncateToWidth(line, width));
+	}
+	invalidate() {}
+}
 
 export type FetchView = {
 	title: string;
