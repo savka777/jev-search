@@ -4,6 +4,7 @@ import { join } from "node:path";
 import gfmPlugin from "@joplin/turndown-plugin-gfm";
 import TurndownService from "turndown";
 
+const FETCH_TIMEOUT_MS = 20_000;
 const USER_AGENT = "jev-search/0.0.1 (+https://github.com/savka777/jev-search)";
 
 export type Link = {
@@ -110,7 +111,7 @@ export async function fetchPage(url: string, options: FetchOptions = {}): Promis
 		const response = await fetch(url, {
 			headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml" },
 			redirect: "follow",
-			signal: options.signal,
+			signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]) : AbortSignal.timeout(FETCH_TIMEOUT_MS),
 		});
 		status = response.status;
 		if (status !== 200) {

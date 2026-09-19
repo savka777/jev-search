@@ -11,18 +11,31 @@ const decode = (html: string) =>
 		.replace(/\s+/g, " ")
 		.trim();
 
+// Brave Search API: used when BRAVE_API_KEY is set. Endpoint and fields: api-dashboard.search.brave.com documentation.
+async function braveSearch(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
+	const response = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${Math.min(maxResults, 20)}`, {
+		headers: { "X-Subscription-Token": process.env.BRAVE_API_KEY ?? "", accept: "application/json" },
+		signal,
+	});
+	if (!response.ok) throw new Error(`Brave search failed: HTTP ${response.status}`);
+	const body = (await response.json()) as { web?: { results?: { title: string; url: string; description?: string }[] } };
+	return (body.web?.results ?? []).map((r) => ({ title: decode(r.title), url: r.url, snippet: decode(r.description ?? "") }));
+}
+
 // The search site rejects bursts: 10 parallel searches in one second all failed, bursts of 8 mostly passed.
 // Starts are spaced across all parallel calls, and an empty result is tried once more.
 const GAP_MS = 700;
+const BRAVE_GAP_MS = 1100; // the Brave free plan allows about 1 request per second
 let nextStart = 0;
 
-/** Web search without an API key, through the DuckDuckGo HTML page. */
+/** Web search: Brave when BRAVE_API_KEY is set, otherwise the DuckDuckGo HTML page (no key, but it blocks after a few searches). */
 export async function webSearch(query: string, maxResults = 10, signal?: AbortSignal): Promise<SearchResult[]> {
 	for (let attempt = 0; ; attempt++) {
 		const wait = nextStart - Date.now();
-		nextStart = Math.max(Date.now(), nextStart) + GAP_MS;
+		const brave = Boolean(process.env.BRAVE_API_KEY);
+		nextStart = Math.max(Date.now(), nextStart) + (brave ? BRAVE_GAP_MS : GAP_MS);
 		if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-		const results = await searchOnce(query, maxResults, signal);
+		const results = await (brave ? braveSearch : searchOnce)(query, maxResults, signal);
 		if (results.length > 0) return results;
 		if (attempt === 1) throw new Error("Search returned no results. The search site may be limiting requests; try again or change the query.");
 	}

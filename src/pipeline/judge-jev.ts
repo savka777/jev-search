@@ -39,12 +39,12 @@ export type JudgeOptions = {
 let nextStart = 0;
 
 /** Evidence question for one research sub-question. Wording is literal because Jev reads literally. */
-export function evidenceQuestion(id: string, subQuestion: string): ChunkQuestion {
+export function evidenceQuestion(id: string, subQuestion: string, criteria?: string): ChunkQuestion {
 	return {
 		id,
 		build: (ref) =>
 			noul(`Does the text in ${ref} contain information that answers this question: "${subQuestion}"`, {
-				true: "The text itself states the answer or a part of the answer.",
+				true: `The text itself states the answer or a part of the answer.${criteria ? ` What counts as an answer: ${criteria}` : ""}`,
 				false:
 					"The text does not state the answer. This includes text that is only on a similar topic, and navigation, tables of contents, indexes, and reference lists.",
 			}),

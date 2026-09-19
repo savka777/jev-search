@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { parseEnv } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -6,22 +8,42 @@ import { Type } from "typebox";
 import { chunkMarkdown, estimateTokens } from "../pipeline/chunk.ts";
 import { fetchPage } from "../pipeline/fetch.ts";
 import { evidenceQuestion, judgeChunks, selectChunks } from "../pipeline/judge-jev.ts";
+import { type ResearchState, runResearch } from "../pipeline/research.ts";
 import { webSearch } from "../pipeline/search.ts";
-import { type FetchView, renderFetchView } from "./view.ts";
+import { type FetchView, renderFetchView, renderResearchView } from "./view.ts";
 
 const USD_PER_MTOK = 0.042; // docs.typesafe.ai/models, jev-1.13.0, input tokens only
 
-// The key comes from the environment. A local checkout may keep it in the package .env instead.
-function loadKey() {
-	if (process.env.TYPESAFE_API_KEY) return;
-	const envFile = new URL("../../.env", import.meta.url).pathname;
-	if (!existsSync(envFile)) return;
-	const key = parseEnv(readFileSync(envFile, "utf8")).TYPESAFE_API_KEY;
-	if (key) process.env.TYPESAFE_API_KEY = key;
+// Keys are never part of the package. Order: environment, then the file written by /jev-key, then a .env in a local checkout.
+const KEY_NAMES = ["TYPESAFE_API_KEY", "BRAVE_API_KEY"] as const;
+const KEY_FILE = join(homedir(), ".pi", "agent", "jev-search.env");
+const NO_KEY = "No TypeSafe API key. Run /jev-key in pi, or set TYPESAFE_API_KEY. Get a key at https://console.typesafe.ai/keys";
+
+const readEnvFile = (file: string): Record<string, string | undefined> => (existsSync(file) ? parseEnv(readFileSync(file, "utf8")) : {});
+
+function loadKeys() {
+	for (const file of [KEY_FILE, new URL("../../.env", import.meta.url).pathname]) {
+		const values = readEnvFile(file);
+		for (const name of KEY_NAMES) if (!process.env[name] && values[name]) process.env[name] = values[name];
+	}
 }
 
 export default function (pi: ExtensionAPI) {
-	loadKey();
+	loadKeys();
+
+	pi.registerCommand("jev-key", {
+		description: "Save your TypeSafe API key for jev-search (or: /jev-key brave, for a Brave Search key)",
+		handler: async (args, ctx) => {
+			const name = args.trim().toLowerCase() === "brave" ? "BRAVE_API_KEY" : "TYPESAFE_API_KEY";
+			const hint = name === "BRAVE_API_KEY" ? "Brave Search API key (optional, for reliable search)" : "TypeSafe API key, from https://console.typesafe.ai/keys";
+			const key = (await ctx.ui.input(hint, ""))?.trim();
+			if (!key) return;
+			const values = { ...readEnvFile(KEY_FILE), [name]: key };
+			writeFileSync(KEY_FILE, `${Object.entries(values).map(([k, v]) => `${k}=${v}`).join("\n")}\n`, { mode: 0o600 });
+			process.env[name] = key;
+			ctx.ui.notify(`jev-search: key saved to ${KEY_FILE}`, "info");
+		},
+	});
 
 	const totals = { sources: 0, chunks: 0, pageTokens: 0, keptTokens: 0, usd: 0, ms: 0 };
 	const showTotals = (ctx: ExtensionContext) => {
@@ -34,8 +56,9 @@ export default function (pi: ExtensionAPI) {
 			),
 		]);
 	};
-	pi.on("session_start", async () => {
+	pi.on("session_start", async (_event, ctx) => {
 		Object.assign(totals, { sources: 0, chunks: 0, pageTokens: 0, keptTokens: 0, usd: 0, ms: 0 });
+		if (!process.env.TYPESAFE_API_KEY && ctx.hasUI) ctx.ui.notify(`jev-search: ${NO_KEY}`, "warning");
 	});
 
 	pi.registerTool({
@@ -75,7 +98,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_id, params, signal, onUpdate, ctx) {
-			if (!process.env.TYPESAFE_API_KEY) throw new Error("TYPESAFE_API_KEY is not set. Export it, or put it in the jev-search .env file.");
+			if (!process.env.TYPESAFE_API_KEY) throw new Error(NO_KEY);
 
 			const page = await fetchPage(params.url, { signal });
 			const chunks = chunkMarkdown(page.markdown);
@@ -139,6 +162,90 @@ export default function (pi: ExtensionAPI) {
 			const view = result.details as FetchView | undefined;
 			if (!view?.scores) return new Text(result.content.map((c) => (c.type === "text" ? c.text : "")).join("\n"), 0, 0);
 			return new Text(renderFetchView(view, expanded, theme), 0, 0);
+		},
+	});
+
+	pi.registerTool({
+		name: "jev_research",
+		label: "Jev Research",
+		description:
+			"One fast research round. Runs all search queries, reads every result page in full and in parallel, and lets Jev judge every part of every page against every sub-question. Returns the coverage of each sub-question (how many independent sources answer it) and the passages that answer it, word for word. A round takes seconds, so use many queries and many pages.",
+		promptSnippet: "Research round: many searches and pages at once, returns coverage and exact passages per sub-question",
+		promptGuidelines: [
+			"Use jev_research for web research: give jev_research 2 to 8 literal sub-questions with acceptance criteria and 3 to 10 search queries. Read its coverage table, then call jev_research again with new queries for the sub-questions that are still open or partial.",
+		],
+		parameters: Type.Object({
+			sub_questions: Type.Array(
+				Type.Object({
+					question: Type.String({ description: "One literal question that a single passage can answer. Name the entities." }),
+					criteria: Type.Optional(Type.String({ description: "What counts as an answer, and what does not." })),
+					min_sources: Type.Optional(Type.Number({ description: "Independent sources needed to call it covered. Default 2." })),
+				}),
+				{ minItems: 1, maxItems: 8 },
+			),
+			queries: Type.Array(Type.String(), { description: "Web search queries", minItems: 1, maxItems: 12 }),
+			urls: Type.Optional(Type.Array(Type.String(), { description: "Pages to read in addition to the search results" })),
+			max_pages: Type.Optional(Type.Number({ description: "Default 40" })),
+			budget_tokens: Type.Optional(Type.Number({ description: "Most tokens of passages to return. Default 8000." })),
+		}),
+
+		async execute(_id, params, signal, onUpdate, ctx) {
+			if (!process.env.TYPESAFE_API_KEY) throw new Error(NO_KEY);
+
+			let lastUpdate = 0;
+			const { state, snippets } = await runResearch(
+				{
+					subQuestions: params.sub_questions.map((sub) => ({ question: sub.question, criteria: sub.criteria, minSources: sub.min_sources })),
+					queries: params.queries,
+					urls: params.urls,
+					maxPages: params.max_pages,
+					budgetTokens: params.budget_tokens,
+				},
+				{
+					signal,
+					onProgress: (progress) => {
+						if (performance.now() - lastUpdate < 120) return;
+						lastUpdate = performance.now();
+						onUpdate?.({ content: [{ type: "text", text: "Researching..." }], details: structuredClone(progress) });
+					},
+				},
+			);
+
+			totals.sources += state.sources.filter((source) => source.status === "done").length;
+			totals.chunks += state.chunksJudged;
+			totals.pageTokens += state.pageTokens;
+			totals.keptTokens += state.keptTokens;
+			totals.usd += state.usd;
+			totals.ms += state.ms;
+			showTotals(ctx);
+
+			const done = state.sources.filter((source) => source.status === "done").length;
+			const failed = state.sources.filter((source) => source.status === "failed");
+			const open = state.coverage.filter((cover) => cover.status !== "covered");
+			const text = [
+				`Round: ${state.queriesTotal} queries → ${state.sources.length} links → ${done} pages read in full (${failed.length} blocked or failed) · ${state.chunksJudged} chunks judged · ${state.pageTokens} tokens read → ${state.keptTokens} kept · ${(state.ms / 1000).toFixed(1)} s`,
+				"",
+				"COVERAGE (a source counts when Jev gives p ≥ 0.8 that a passage answers the sub-question; p is not proof that the statement is true)",
+				...state.coverage.map((cover) => `${cover.id} [${cover.status}, ${cover.hosts.length}/${cover.needed} sources, best p=${cover.bestP.toFixed(2)}] ${cover.question}`),
+				"",
+				"EVIDENCE (exact text from the pages)",
+				...snippets.map((snippet, i) => `[${i + 1}] ${snippet.ids.join(",")} · p=${snippet.p.toFixed(2)} · ${snippet.title} · ${snippet.url} · chunk ${snippet.chunk}${snippet.section ? ` · ${snippet.section}` : ""}\n${snippet.text}`),
+				"",
+				open.length
+					? `NEXT: ${open.map((cover) => cover.id).join(", ")} not covered yet. Call jev_research again with new queries for those sub-questions only, or report them as not found.`
+					: "NEXT: every sub-question is covered. Check the passages for conflicts, then write the report.",
+				...(state.searchErrors.length ? ["", `SEARCH ERRORS: ${state.searchErrors.join(" | ")}`] : []),
+			].join("\n");
+			return { content: [{ type: "text", text }], details: state };
+		},
+
+		renderCall(args, theme) {
+			return new Text(`${theme.fg("toolTitle", theme.bold("jev_research "))}${theme.fg("muted", `${args.sub_questions?.length ?? 0} sub-questions · ${args.queries?.length ?? 0} queries`)}`, 0, 0);
+		},
+		renderResult(result, { expanded }, theme) {
+			const state = result.details as ResearchState | undefined;
+			if (!state?.coverage) return new Text(result.content.map((c) => (c.type === "text" ? c.text : "")).join("\n"), 0, 0);
+			return new Text(renderResearchView(state, expanded, theme), 0, 0);
 		},
 	});
 }
