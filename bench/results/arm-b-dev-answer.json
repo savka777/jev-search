@@ -1,0 +1,79 @@
+{
+  "date": "2026-09-19T16:43:07.631Z",
+  "set": "dev",
+  "batchSize": 8,
+  "threshold": 0.5,
+  "cases": [
+    {
+      "case": "py-intern-immortal",
+      "depth": "97%",
+      "beyondCut": true,
+      "needleP": 0.98,
+      "rank": 1,
+      "keptChunks": 1,
+      "keptTokens": 175,
+      "pageTokens": 29494,
+      "hit": true,
+      "sentTokens": 192,
+      "correct": true,
+      "llmMs": 1823
+    },
+    {
+      "case": "py-batched",
+      "depth": "24%",
+      "beyondCut": false,
+      "needleP": 0.98,
+      "rank": 1,
+      "keptChunks": 1,
+      "keptTokens": 46,
+      "pageTokens": 29494,
+      "hit": true,
+      "sentTokens": 64,
+      "correct": true,
+      "llmMs": 2108
+    },
+    {
+      "case": "py-zipimport",
+      "depth": "50%",
+      "beyondCut": false,
+      "needleP": 0.98,
+      "rank": 1,
+      "keptChunks": 4,
+      "keptTokens": 630,
+      "pageTokens": 29494,
+      "hit": true,
+      "sentTokens": 706,
+      "correct": true,
+      "llmMs": 2760
+    },
+    {
+      "case": "py-hash-seed",
+      "depth": "88%",
+      "beyondCut": true,
+      "needleP": 0.98,
+      "rank": 1,
+      "keptChunks": 2,
+      "keptTokens": 472,
+      "pageTokens": 29494,
+      "hit": true,
+      "sentTokens": 517,
+      "correct": true,
+      "llmMs": 2941
+    }
+  ],
+  "pages": [
+    {
+      "page": "python-3.12",
+      "chunks": 182,
+      "questions": 4,
+      "requests": 23,
+      "failed": 0,
+      "http429": 0,
+      "inputTokens": 121670,
+      "usd": 0.0051,
+      "wallMs": 1601,
+      "p50Ms": 735,
+      "p95Ms": 825
+    }
+  ]
+}

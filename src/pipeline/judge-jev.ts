@@ -1,5 +1,5 @@
 import { type NoulQuestion, noul, TypeSafeClient } from "@typesafe-ai/sdk";
-import type { Chunk } from "./chunk.ts";
+import { type Chunk, estimateTokens } from "./chunk.ts";
 
 /** One literal yes/no question that is asked about every chunk. `build` gets the chunk position in the request. */
 export type ChunkQuestion = {
@@ -120,4 +120,21 @@ export async function judgeChunks(
 	metrics.wallMs = performance.now() - started;
 	judgments.sort((a, b) => a.chunk.index - b.chunk.index);
 	return { judgments, metrics };
+}
+
+/** Keeps chunks at or above the threshold, best first, until the token budget is full. Returns them in page order. */
+export function selectChunks(
+	judgments: Judgment[],
+	options: { threshold?: number; budgetTokens?: number; questionIds?: string[] } = {},
+): Judgment[] {
+	const { threshold = 0.5, budgetTokens = 3000, questionIds } = options;
+	const score = (j: Judgment) => Math.max(...(questionIds ?? Object.keys(j.p)).map((id) => j.p[id]));
+	const kept: Judgment[] = [];
+	let tokens = 0;
+	for (const j of judgments.filter((j) => score(j) >= threshold).sort((a, b) => score(b) - score(a))) {
+		tokens += estimateTokens(j.chunk.text);
+		if (tokens > budgetTokens && kept.length > 0) break;
+		kept.push(j);
+	}
+	return kept.sort((a, b) => a.chunk.index - b.chunk.index);
 }

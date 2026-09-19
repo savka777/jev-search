@@ -49,7 +49,17 @@ The replies name the cause:
 
 ## Limits of this check
 
-- The two columns do not measure the same thing. `WebFetch` "found" means the tool gave the answer with a quote. Jev "kept" means the chunk with the answer passed the filter; an LLM must still read the kept chunks and answer. Arm B with an answering LLM will close this gap.
+- The table compares a final answer (`WebFetch`) with a kept chunk (Jev). The section below closes that gap.
 - One tool, one run, 18 cases. Other tools cut at other sizes.
 - The questions share words with their answer passages.
 - Time per `WebFetch` call was not measured.
+
+## Final answers from the Jev path
+
+Run: `npm run bench -- --set test --answer` (results in `arm-b-test-answer.json`). The chunks that Jev kept (best first, 3,000 token budget) went to the LLM with the same prompt as above. The LLM was `openai/gpt-5.6-sol` through `pi -p` with no tools.
+
+- Correct final answers: 21 of 21 (18 of 18 on the cases `WebFetch` could test, where `WebFetch` gave 4).
+- Text sent to the LLM: median 469 tokens per question. The pages hold 56k to 554k tokens.
+- LLM answer time: median 2.1 s per question, pi start-up included.
+
+The answering models differ: `WebFetch` uses a small fast model, this run used the pi default model. The 14 `WebFetch` misses are not model errors; the tool reported that the text was not in the content it received.
