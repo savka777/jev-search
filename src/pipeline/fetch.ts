@@ -92,6 +92,22 @@ function titleOf(html: string): string {
 	return match ? match[1].replace(/\s+/g, " ").trim() : "";
 }
 
+/** PDF text, one "Page N" heading per page, so a passage can be cited by page. Primary sources are often PDFs: 104 of 700 links in one research run. */
+async function pdfPage(url: string, bytes: Uint8Array, fetchStart: number): Promise<Page> {
+	const fetchMs = performance.now() - fetchStart;
+	const convertStart = performance.now();
+	const htmlBytes = bytes.length;
+	// Loaded only when a PDF arrives.
+	const { extractText, getDocumentProxy } = await import("unpdf");
+	// verbosity 0: the PDF library prints font warnings to the console, and inside pi that text is drawn over the screen.
+	const { text } = await extractText(await getDocumentProxy(bytes, { verbosity: 0 }), { mergePages: false });
+	const pages = text.map((page) => page.replace(/[ \t]+/g, " ").trim());
+	if (pages.join("").length < 200) throw new Error(`The PDF at ${url} has no text layer (scanned pages). It cannot be read.`);
+	const markdown = pages.map((page, i) => (page ? `## Page ${i + 1}\n\n${page}` : "")).filter(Boolean).join("\n\n");
+	const title = pages.find(Boolean)?.slice(0, 90) ?? url;
+	return { url, status: 200, title, markdown, links: [], htmlBytes, fetchMs, convertMs: performance.now() - convertStart, cached: false };
+}
+
 export async function fetchPage(url: string, options: FetchOptions = {}): Promise<Page> {
 	const cacheFile = options.cacheDir
 		? join(options.cacheDir, `${createHash("sha256").update(url).digest("hex").slice(0, 16)}.html`)
@@ -110,7 +126,7 @@ export async function fetchPage(url: string, options: FetchOptions = {}): Promis
 
 	if (html === undefined) {
 		const response = await fetch(url, {
-			headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml" },
+			headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml,application/pdf,text/*;q=0.9" },
 			redirect: "follow",
 			signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]) : AbortSignal.timeout(FETCH_TIMEOUT_MS),
 		});
@@ -118,8 +134,11 @@ export async function fetchPage(url: string, options: FetchOptions = {}): Promis
 		if (status !== 200) {
 			throw new Error(`HTTP ${status} for ${url}`);
 		}
-		// PDFs and other binary files read as HTML give garbage chunks that still cost judge tokens.
 		const contentType = response.headers.get("content-type") ?? "";
+		if (/application\/pdf/i.test(contentType) || (/octet-stream/i.test(contentType) && /\.pdf($|[?#])/i.test(url))) {
+			return pdfPage(url, new Uint8Array(await response.arrayBuffer()), fetchStart);
+		}
+		// Other binary files read as HTML give garbage chunks that still cost judge tokens.
 		if (contentType && !/html|xml|^text\//i.test(contentType)) {
 			throw new Error(`Unsupported content type "${contentType}" for ${url}. Only HTML and text pages can be read.`);
 		}

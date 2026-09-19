@@ -81,7 +81,7 @@ export function renderResearchView(state: ResearchState, expanded: boolean, them
 	const lines = [
 		`${fg("muted", "search")} ${fg("accent", bar(state.queriesDone, state.queriesTotal))} ${fg("dim", `${state.queriesDone}/${state.queriesTotal} queries → ${sources.length} links${state.searchErrors.length ? ` · ${state.searchErrors.length} failed` : ""}`)}`,
 		`${fg("muted", "read  ")} ${fg("accent", bar(settled, sources.length))} ${fg("dim", `${settled}/${sources.length} pages${failed ? ` · ${failed} blocked or failed` : ""}`)}`,
-		`${fg("muted", "judge ")} ${fg("accent", bar(state.chunksJudged, chunksTotal))} ${fg("dim", `${k(state.chunksJudged)}/${k(chunksTotal)} chunks`)}`,
+		`${fg("muted", "judge ")} ${fg("accent", bar(state.chunksJudged, chunksTotal))} ${fg("dim", `${k(state.chunksJudged)}/${k(chunksTotal)} chunks`)}${state.chunksLost ? fg("error", ` · ${state.chunksLost} lost`) : ""}`,
 		"",
 	];
 

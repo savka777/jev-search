@@ -16,6 +16,9 @@ export type Judgment = {
 export type JudgeMetrics = {
 	requests: number;
 	failedRequests: number;
+	/** Chunks in failed requests. They have no judgment. */
+	chunksLost: number;
+	lastError?: string;
 	/** HTTP 429 responses seen. The SDK retries them; they are counted apart so waits are not read as model latency. */
 	rateLimited: number;
 	inputTokens: number;
@@ -29,8 +32,9 @@ export type JudgeOptions = {
 	/** Adjacent chunks per request. Neighbours give context; more chunks mean fewer requests but a larger state. */
 	batchSize?: number;
 	concurrency?: number;
-	/** TypeSafe documents 1,200 requests per minute for jev-1.13 (docs.typesafe.ai/models, 2026-09-19). */
+	/** TypeSafe documents 1,200 requests per minute and 250,000 tokens per second for jev-1.13 (docs.typesafe.ai/models, 2026-09-19). */
 	requestsPerMinute?: number;
+	tokensPerSecond?: number;
 	signal?: AbortSignal;
 	onBatch?: (judgments: Judgment[]) => void;
 };
@@ -59,9 +63,16 @@ export async function judgeChunks(
 	const batchSize = options.batchSize ?? 8;
 	const concurrency = options.concurrency ?? 16;
 	const gapMs = 60_000 / (options.requestsPerMinute ?? 1200);
+	// The token count of a request is an estimate, so pacing aims at 80% of the documented token limit.
+	// A run with 13 questions per chunk sent about 248k tokens per second and got 715 HTTP 429 responses.
+	const tokensPerMs = ((options.tokensPerSecond ?? 250_000) * 0.8) / 1000;
 
-	const metrics: JudgeMetrics = { requests: 0, failedRequests: 0, rateLimited: 0, inputTokens: 0, wallMs: 0, latenciesMs: [] };
+	const metrics: JudgeMetrics = { requests: 0, failedRequests: 0, chunksLost: 0, rateLimited: 0, inputTokens: 0, wallMs: 0, latenciesMs: [] };
 	const client = new TypeSafeClient({
+		// The SDK retries HTTP 429 with backoff. More attempts than its default 2, so a burst does not drop chunks.
+		retry: { maxRetries: 5 },
+		// The SDK logs each retry to the console. Inside pi that text is drawn over the screen. HTTP 429s are counted below.
+		logLevel: "off",
 		fetch: async (input, init) => {
 			const response = await fetch(input, init);
 			if (response.status === 429) metrics.rateLimited++;
@@ -79,29 +90,25 @@ export async function judgeChunks(
 	const worker = async () => {
 		while (nextBatch < batches.length && !options.signal?.aborted) {
 			const batch = batches[nextBatch++];
-			// Pace request starts to the documented rate limit.
-			const wait = nextStart - performance.now();
-			nextStart = Math.max(performance.now(), nextStart) + gapMs;
-			if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-
 			const requestQuestions: Record<string, NoulQuestion> = {};
 			batch.forEach((_, i) => {
 				for (const question of questions) requestQuestions[`${question.id}.${i}`] = question.build(`chunks[${i}]`);
 			});
+			const state = {
+				page_title: options.pageTitle,
+				chunks: batch.map((chunk) => ({ section: chunk.headingPath.join(" > "), text: chunk.text })),
+			};
+
+			// Pace request starts to both documented limits: requests per minute and tokens per second.
+			const estimatedTokens = (JSON.stringify(state).length + JSON.stringify(requestQuestions).length) / 3.5;
+			const wait = nextStart - performance.now();
+			nextStart = Math.max(performance.now(), nextStart) + Math.max(gapMs, estimatedTokens / tokensPerMs);
+			if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
 
 			const requestStart = performance.now();
 			metrics.requests++;
 			try {
-				const result = await client.systemOne(
-					{
-						state: {
-							page_title: options.pageTitle,
-							chunks: batch.map((chunk) => ({ section: chunk.headingPath.join(" > "), text: chunk.text })),
-						},
-						questions: requestQuestions,
-					},
-					{ signal: options.signal },
-				);
+				const result = await client.systemOne({ state, questions: requestQuestions }, { signal: options.signal });
 				metrics.inputTokens += result.usage.input_tokens;
 				const batchJudgments = batch.map((chunk, i) => ({
 					chunk,
@@ -110,8 +117,10 @@ export async function judgeChunks(
 				judgments.push(...batchJudgments);
 				options.onBatch?.(batchJudgments);
 			} catch (error) {
+				// No console output here: inside pi it would be drawn over the screen. Callers read the metrics.
 				metrics.failedRequests++;
-				console.error(`judge request failed (chunks ${batch[0].index}-${batch[batch.length - 1].index}):`, error);
+				metrics.chunksLost += batch.length;
+				metrics.lastError = error instanceof Error ? error.message.slice(0, 160) : String(error);
 			} finally {
 				metrics.latenciesMs.push(performance.now() - requestStart);
 			}

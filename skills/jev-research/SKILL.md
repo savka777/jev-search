@@ -23,7 +23,7 @@ Skip this step when the request already answers these points. Do not grill for a
 
 ## 2. Plan
 
-Set `objective` to the user's main question, in their words. It is judged as a catch-all, so evidence that your sub-questions miss is still found.
+Set `objective` to the user's main question, when it is a question that a page could answer ("Does a four-day work week improve productivity?"). It is judged as a catch-all, so evidence that your sub-questions miss is still found. When the request is a task and not a question ("find business ideas", "write a market map"), leave `objective` out: no passage answers a task, so it finds nothing.
 
 Write 2 to 8 sub-questions. Each one must be answerable by a single passage. Jev reads literally, so name the entities and the fact you want.
 
@@ -31,6 +31,8 @@ Write 2 to 8 sub-questions. Each one must be answerable by a single passage. Jev
 - Bad: "fines?" or "Tell me about enforcement."
 
 For each sub-question write `criteria`: what counts and what does not. Example: "An amount in euros or a percentage of turnover, for GPAI providers specifically. General fines for other operators do not count."
+
+Jev matches what a page states. A sub-question that no page would answer in one passage finds 0 sources ("What is the best opportunity?"). In a real run, abstract sub-questions found 0 sources while claims found up to 18. So for open-ended work (ideas, markets, strategy), turn each hypothesis into claims and concrete questions about facts: "Prior authorization delays care for patients", "How many prior authorization requests does a physician practice complete per week?".
 
 When the user has a thesis, an idea, or a belief to test, put it in `claims` as a plain statement ("A four-day work week improves employee productivity"). Jev finds passages that support it and passages that contradict it, by meaning, not by wording. Always add queries that look for the opposite view ("problems", "criticism", "failed", "no effect"); without them the count only reflects what the search found.
 
@@ -60,5 +62,7 @@ Use `jev_fetch` only to read one specific URL. Use `web_search` only when you ne
 
 - Do the research yourself, in this session, with `jev_research`. Do not hand it to sub-agents, teams, or shell commands such as `curl`: they do not have these tools and they cut long pages.
 - Use only returned passages as evidence. Do not fill gaps from memory; mark them as not found.
-- If pages fail (HTTP 403, 429, a bot check, a PDF), skip them. Do not try to work around a block.
+- PDFs are read in full; passages from a PDF carry their page number ("Page 12"). Cite the page.
+- If pages fail (HTTP 403, 429, a bot check, a scanned PDF), skip them. Do not try to work around a block.
+- If the reply says chunks could not be judged, the round is incomplete: run it again with fewer sub-questions and claims per call.
 - If the tool reports that no TypeSafe API key is set, tell the user to run `/jev-key`.

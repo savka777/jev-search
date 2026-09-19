@@ -23,7 +23,8 @@
   "dependencies": {
     "@joplin/turndown-plugin-gfm": "^1.0.68",
     "@typesafe-ai/sdk": "^0.6.0",
-    "turndown": "^7.2.4"
+    "turndown": "^7.2.4",
+    "unpdf": "^1.8.1"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

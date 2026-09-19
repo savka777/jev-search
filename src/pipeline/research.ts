@@ -53,6 +53,8 @@ export type ResearchState = {
 	sources: SourceState[];
 	coverage: Coverage[];
 	chunksJudged: number;
+	/** Chunks that Jev could not judge (failed requests after retries). */
+	chunksLost: number;
 	pageTokens: number;
 	keptTokens: number;
 	jevRequests: number;
@@ -122,6 +124,7 @@ export async function runResearch(
 		sources: [],
 		coverage,
 		chunksJudged: 0,
+		chunksLost: 0,
 		pageTokens: 0,
 		keptTokens: 0,
 		jevRequests: 0,
@@ -205,6 +208,7 @@ export async function runResearch(
 				});
 				source.judgeMs = Math.round(metrics.wallMs);
 				latencies.push(...metrics.latenciesMs);
+				state.chunksLost += metrics.chunksLost;
 				state.jevRequests += metrics.requests;
 				state.rateLimited += metrics.rateLimited;
 				state.usd += (metrics.inputTokens / 1e6) * USD_PER_MTOK;

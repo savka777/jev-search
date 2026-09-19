@@ -266,7 +266,7 @@ export default function (pi: ExtensionAPI) {
 			const failed = state.sources.length - done;
 			const open = state.coverage.filter((cover) => (cover.kind === "question" || cover.kind === "main") && cover.status !== "covered");
 			const text = [
-				`Round: ${state.queriesTotal} queries → ${state.sources.length} links → ${done} pages read in full (${failed} blocked or failed) · ${state.chunksJudged} chunks judged · ${state.pageTokens} tokens read · ${(state.ms / 1000).toFixed(1)} s`,
+				`Round: ${state.queriesTotal} queries → ${state.sources.length} links → ${done} pages read in full (${failed} blocked or failed) · ${state.chunksJudged} chunks judged${state.chunksLost ? ` (${state.chunksLost} more could not be judged: Jev requests failed)` : ""} · ${state.pageTokens} tokens read · ${(state.ms / 1000).toFixed(1)} s`,
 				"",
 				"COVERAGE (a source counts when Jev gives p ≥ 0.8 for one of its passages; p is not proof that a statement is true)",
 				...state.coverage.map((cover) => {
