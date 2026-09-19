@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -25,6 +25,8 @@ const USD_PER_MTOK = 0.042; // docs.typesafe.ai/models, jev-1.13.0, input tokens
 // Keys are never part of the package. Order: environment, then the file written by /jev-key, then a .env in a local checkout.
 const KEY_NAMES = ["TYPESAFE_API_KEY", "BRAVE_API_KEY"] as const;
 const KEY_FILE = join(homedir(), ".pi", "agent", "jev-search.env");
+/** Evidence and telemetry of every research round. Kept outside the OS temp folder so it survives a restart. */
+const RUNS_DIR = join(homedir(), ".pi", "agent", "jev-search", "runs");
 const NO_KEY = "No TypeSafe API key. Run /jev-key in pi, or set TYPESAFE_API_KEY. Get a key at https://console.typesafe.ai/keys";
 
 const readEnvFile = (file: string): Record<string, string | undefined> => (existsSync(file) ? parseEnv(readFileSync(file, "utf8")) : {});
@@ -243,9 +245,11 @@ export default function (pi: ExtensionAPI) {
 			// Every kept passage goes to a file, so the reply budget hides nothing for good.
 			const name = (cover: (typeof state.coverage)[number]) => (cover.kind === "supports" || cover.kind === "contradicts" ? `${cover.id} ${cover.kind.toUpperCase()}: ${cover.label}` : `${cover.id} ${cover.label}`);
 			const passage = (item: (typeof evidence)[number], id: string) => `p=${scoreFor(item.p, id).toFixed(2)} · ${item.title} · ${item.url} · chunk ${item.chunk}${item.section ? ` · ${item.section}` : ""}\n${item.text}`;
-			const dir = join(tmpdir(), "jev-search");
-			mkdirSync(dir, { recursive: true });
-			const evidenceFile = join(dir, `evidence-${new Date().toISOString().replace(/[:.]/g, "-")}.md`);
+			const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+			mkdirSync(RUNS_DIR, { recursive: true });
+			const evidenceFile = join(RUNS_DIR, `${stamp}-evidence.md`);
+			// Telemetry of the round: the plan, time per step and per page, Jev latency, tokens, cost, coverage.
+			writeFileSync(join(RUNS_DIR, `${stamp}-telemetry.json`), `${JSON.stringify({ date: new Date().toISOString(), plan: params, state, passagesKept: evidence.length, passagesInReply: snippets.length }, null, 2)}\n`);
 			writeFileSync(
 				evidenceFile,
 				state.coverage

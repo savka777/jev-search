@@ -31,6 +31,8 @@ export type SourceState = {
 	cutChunk: number;
 	pageTokens: number;
 	kept: number;
+	fetchMs: number;
+	judgeMs: number;
 };
 /** One thing Jev checks in every chunk: a sub-question, the main question, or one side of a claim. */
 export type Coverage = {
@@ -55,7 +57,11 @@ export type ResearchState = {
 	keptTokens: number;
 	jevRequests: number;
 	rateLimited: number;
+	/** Jev latency per request, retries included. */
+	jevP50Ms: number;
+	jevP95Ms: number;
 	usd: number;
+	searchMs: number;
 	ms: number;
 };
 
@@ -120,9 +126,13 @@ export async function runResearch(
 		keptTokens: 0,
 		jevRequests: 0,
 		rateLimited: 0,
+		jevP50Ms: 0,
+		jevP95Ms: 0,
 		usd: 0,
+		searchMs: 0,
 		ms: 0,
 	};
+	const latencies: number[] = [];
 	const progress = () => {
 		state.ms = performance.now() - started;
 		options.onProgress?.(state);
@@ -142,11 +152,12 @@ export async function runResearch(
 				}),
 		),
 	);
+	state.searchMs = performance.now() - started;
 	const urls = new Set(plan.urls ?? []);
 	for (let rank = 0; urls.size < maxPages && perQuery.some((results) => rank < results.length); rank++) {
 		for (const results of perQuery) if (results[rank] && urls.size < maxPages) urls.add(results[rank].url.split("#")[0]);
 	}
-	state.sources = [...urls].map((url) => ({ url, host: hostOf(url), title: url, status: "queued", scores: [], cutChunk: -1, pageTokens: 0, kept: 0 }));
+	state.sources = [...urls].map((url) => ({ url, host: hostOf(url), title: url, status: "queued", scores: [], cutChunk: -1, pageTokens: 0, kept: 0, fetchMs: 0, judgeMs: 0 }));
 	progress();
 
 	// 2. Read and judge. Each page goes to Jev as soon as it arrives.
@@ -158,7 +169,9 @@ export async function runResearch(
 			try {
 				source.status = "fetching";
 				progress();
+				const fetchStarted = performance.now();
 				const page = await fetchPage(source.url, { signal: options.signal });
+				source.fetchMs = Math.round(performance.now() - fetchStarted);
 				const chunks = chunkMarkdown(page.markdown);
 				source.title = page.title || source.url;
 				source.scores = new Array(chunks.length).fill(-1);
@@ -190,6 +203,8 @@ export async function runResearch(
 						progress();
 					},
 				});
+				source.judgeMs = Math.round(metrics.wallMs);
+				latencies.push(...metrics.latenciesMs);
 				state.jevRequests += metrics.requests;
 				state.rateLimited += metrics.rateLimited;
 				state.usd += (metrics.inputTokens / 1e6) * USD_PER_MTOK;
@@ -202,6 +217,9 @@ export async function runResearch(
 		}
 	};
 	await Promise.all(Array.from({ length: FETCH_CONCURRENCY }, worker));
+	latencies.sort((a, b) => a - b);
+	state.jevP50Ms = Math.round(latencies[Math.floor(latencies.length * 0.5)] ?? 0);
+	state.jevP95Ms = Math.round(latencies[Math.floor(latencies.length * 0.95)] ?? 0);
 
 	// 3. Select what the agent reads now: per probe, best first, at most 2 per page, within an equal share of the budget.
 	// Nothing is deleted: `evidence` holds every kept passage.
