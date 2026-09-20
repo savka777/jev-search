@@ -3,7 +3,7 @@
 import { noul } from "@typesafe-ai/sdk";
 import { chunkMarkdown, estimateTokens } from "./chunk.ts";
 import { fetchPage } from "./fetch.ts";
-import { type ChunkQuestion, evidenceQuestion, judgeChunks } from "./judge-jev.ts";
+import { type ChunkQuestion, evidenceQuestion, JevAccessError, judgeChunks } from "./judge-jev.ts";
 import { webSearch } from "./search.ts";
 
 export type SubQuestion = { question: string; criteria?: string; minSources?: number };
@@ -166,8 +166,9 @@ export async function runResearch(
 	// 2. Read and judge. Each page goes to Jev as soon as it arrives.
 	const evidence: Evidence[] = [];
 	let next = 0;
+	let accessError: JevAccessError | undefined;
 	const worker = async () => {
-		while (next < state.sources.length && !options.signal?.aborted) {
+		while (next < state.sources.length && !options.signal?.aborted && !accessError) {
 			const source = state.sources[next++];
 			try {
 				source.status = "fetching";
@@ -214,6 +215,8 @@ export async function runResearch(
 				state.usd += (metrics.inputTokens / 1e6) * USD_PER_MTOK;
 				source.status = "done";
 			} catch (error) {
+				// No credits or a bad key: every page would fail the same way. Stop, and tell the user, not "0 sources".
+				if (error instanceof JevAccessError) accessError = error;
 				source.status = "failed";
 				source.error = error instanceof Error ? error.message.slice(0, 80) : String(error);
 			}
@@ -221,6 +224,7 @@ export async function runResearch(
 		}
 	};
 	await Promise.all(Array.from({ length: FETCH_CONCURRENCY }, worker));
+	if (accessError) throw accessError;
 	latencies.sort((a, b) => a - b);
 	state.jevP50Ms = Math.round(latencies[Math.floor(latencies.length * 0.5)] ?? 0);
 	state.jevP95Ms = Math.round(latencies[Math.floor(latencies.length * 0.95)] ?? 0);

@@ -39,6 +39,9 @@ export type JudgeOptions = {
 	onBatch?: (judgments: Judgment[]) => void;
 };
 
+/** Jev rejected the account or the key (HTTP 401, 402, 403). Retrying or reading more pages cannot help, so the whole job stops. */
+export class JevAccessError extends Error {}
+
 // Request starts are paced across all running judgeChunks calls: pi runs tool calls in parallel, and the rate limit is per account.
 let nextStart = 0;
 
@@ -85,10 +88,11 @@ export async function judgeChunks(
 
 	const judgments: Judgment[] = [];
 	let nextBatch = 0;
+	let accessError: JevAccessError | undefined;
 	const started = performance.now();
 
 	const worker = async () => {
-		while (nextBatch < batches.length && !options.signal?.aborted) {
+		while (nextBatch < batches.length && !options.signal?.aborted && !accessError) {
 			const batch = batches[nextBatch++];
 			const requestQuestions: Record<string, NoulQuestion> = {};
 			batch.forEach((_, i) => {
@@ -121,6 +125,8 @@ export async function judgeChunks(
 				metrics.failedRequests++;
 				metrics.chunksLost += batch.length;
 				metrics.lastError = error instanceof Error ? error.message.slice(0, 160) : String(error);
+				const status = (error as { status?: number }).status;
+				if (status === 401 || status === 402 || status === 403) accessError = new JevAccessError(`Jev refused the request (HTTP ${status}): ${error instanceof Error ? error.message : error}`);
 			} finally {
 				metrics.latenciesMs.push(performance.now() - requestStart);
 			}
@@ -128,6 +134,7 @@ export async function judgeChunks(
 	};
 
 	await Promise.all(Array.from({ length: Math.min(concurrency, batches.length) }, worker));
+	if (accessError) throw accessError;
 	metrics.wallMs = performance.now() - started;
 	judgments.sort((a, b) => a.chunk.index - b.chunk.index);
 	return { judgments, metrics };
